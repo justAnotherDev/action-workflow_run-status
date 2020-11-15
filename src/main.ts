@@ -61,9 +61,9 @@ function job2status(
 
 async function postStatus(isCleanUp: boolean): Promise<void> {
   const context = github.context
-  if (context.eventName !== 'workflow_run') {
+  if (context.eventName !== 'workflow_dispatch') {
     throw new Error(
-      `This is not workflow_run event: eventName=${context.eventName}`
+      `This is not workflow_dispatch event: eventName=${context.eventName}`
     )
   }
   const token = core.getInput('github_token')
@@ -81,29 +81,23 @@ async function postStatus(isCleanUp: boolean): Promise<void> {
     filter: 'latest',
     per_page: 100
   })
-  const job = jobs.data.jobs.find(j => j.name === context.job)
+
+  const job = jobs.data.jobs.find(
+    j => j.name === context.job || j.run_id === context.runId
+  )
   if (!job) {
     throw new Error(`job not found: ${context.job}`)
   }
-  const state =
-    context.payload.action === 'requested' && requestedAsPending()
-      ? 'pending'
-      : job2status(job, isCleanUp)
+  const state = !isCleanUp ? 'pending' : job2status(job, isCleanUp)
   const resp = await octokit.repos.createCommitStatus({
     owner: context.repo.owner,
     repo: context.repo.repo,
-    sha: context.payload.workflow_run.head_commit.id,
+    sha: process.env.GITHUB_SHA!,
     state,
-    context: `${context.workflow} / ${context.job} (${context.payload.workflow_run.event} => ${context.eventName})`,
+    context: job.name,
     target_url: job.html_url
   })
-  core.debug(JSON.stringify(resp, null, 2))
-}
-
-function requestedAsPending(): boolean {
-  return (
-    (core.getInput('requested_as_pending') || 'false').toUpperCase() === 'TRUE'
-  )
+  core.info(JSON.stringify(resp, null, 2))
 }
 
 // Main

@@ -596,8 +596,8 @@ function job2status(job, isCleanUp) {
 function postStatus(isCleanUp) {
     return __awaiter(this, void 0, void 0, function* () {
         const context = github.context;
-        if (context.eventName !== 'workflow_run') {
-            throw new Error(`This is not workflow_run event: eventName=${context.eventName}`);
+        if (context.eventName !== 'workflow_dispatch') {
+            throw new Error(`This is not workflow_dispatch event: eventName=${context.eventName}`);
         }
         const token = core.getInput('github_token');
         const octokit = github.getOctokit(token);
@@ -612,26 +612,21 @@ function postStatus(isCleanUp) {
             filter: 'latest',
             per_page: 100
         });
-        const job = jobs.data.jobs.find(j => j.name === context.job);
+        const job = jobs.data.jobs.find(j => j.name === context.job || j.run_id === context.runId);
         if (!job) {
             throw new Error(`job not found: ${context.job}`);
         }
-        const state = context.payload.action === 'requested' && requestedAsPending()
-            ? 'pending'
-            : job2status(job, isCleanUp);
+        const state = !isCleanUp ? 'pending' : job2status(job, isCleanUp);
         const resp = yield octokit.repos.createCommitStatus({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            sha: context.payload.workflow_run.head_commit.id,
+            sha: process.env.GITHUB_SHA,
             state,
-            context: `${context.workflow} / ${context.job} (${context.payload.workflow_run.event} => ${context.eventName})`,
+            context: job.name,
             target_url: job.html_url
         });
-        core.debug(JSON.stringify(resp, null, 2));
+        core.info(JSON.stringify(resp, null, 2));
     });
-}
-function requestedAsPending() {
-    return ((core.getInput('requested_as_pending') || 'false').toUpperCase() === 'TRUE');
 }
 // Main
 if (!stateHelper.IsPost) {
